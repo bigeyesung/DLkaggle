@@ -125,30 +125,24 @@ class BirdClassfier():
                 return lr
         lr_scheduler_callback = LearningRateScheduler(scheduler)
         finetune_at = 28
-
         # fine-tuning
         for layer in vit_model.layers[:finetune_at - 1]:
             layer.trainable = False
-    
         num_classes = len(validation_generator.class_indices)
-
         # Add GaussianNoise layer for robustness
         noise = GaussianNoise(0.01, input_shape=(224, 224, 3))
         # Classification head
         head = Dense(num_classes, activation="softmax")
-
         model = Sequential()
         model.add(noise)
         model.add(vit_model)
         model.add(head)
-
         model.compile(optimizer=optimizers.Adam(),
                     loss="sparse_categorical_crossentropy",
-                    metrics=["accuracy"])
-                      
+                    metrics=["accuracy"])                      
         history = model.fit(
                 train_generator,
-                epochs=1,
+                epochs=20,
                 validation_data=validation_generator,
                 verbose=1, 
                 shuffle=True,
