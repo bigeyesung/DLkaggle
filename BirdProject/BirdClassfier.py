@@ -150,8 +150,6 @@ class BirdClassfier():
                     EarlyStopping(monitor="val_accuracy", patience=10, restore_best_weights=True),
                     lr_scheduler_callback,
                 ])
-
-
         history_dict = history.history
         loss_values = history_dict["loss"]
         val_loss_values = history_dict["val_loss"]
