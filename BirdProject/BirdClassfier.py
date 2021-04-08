@@ -34,10 +34,8 @@ class Utility():
 # config = ConfigProto()
 # config.gpu_options.allow_growth = True
 # session = InteractiveSession(config=config)
-
 # def allocate_gpu_memory(gpu_number=0):
 #     physical_devices = tf.config.experimental.list_physical_devices('GPU')
-
 #     if physical_devices:
 #         try:
 #             print("Found {} GPU(s)".format(len(physical_devices)))
@@ -49,7 +47,6 @@ class Utility():
 #     else:
 #         print("Not enough GPU hardware devices available")
 # allocate_gpu_memory()
-
 # device_lib.list_local_devices()
 
 
