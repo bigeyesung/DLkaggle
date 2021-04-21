@@ -174,6 +174,7 @@ class BirdClassfier():
         print("best val_loss:", np.min(val_loss_values), "epoch:", np.argmin(val_loss_values))
         test_loss, test_acc = model.evaluate(test_generator)
         print("Test Accuracy:", test_acc)
+        print("end")
 
 
 if __name__ == "__main__":
