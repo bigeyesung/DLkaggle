@@ -31,24 +31,6 @@ class Utility():
         else:
             print("Not enough GPU hardware devices available")
 
-# config = ConfigProto()
-# config.gpu_options.allow_growth = True
-# session = InteractiveSession(config=config)
-# def allocate_gpu_memory(gpu_number=0):
-#     physical_devices = tf.config.experimental.list_physical_devices('GPU')
-#     if physical_devices:
-#         try:
-#             print("Found {} GPU(s)".format(len(physical_devices)))
-#             tf.config.set_visible_devices(physical_devices[gpu_number], 'GPU')
-#             tf.config.experimental.set_memory_growth(physical_devices[gpu_number], True)
-#             print("#{} GPU memory is allocated".format(gpu_number))
-#         except RuntimeError as e:
-#             print(e)
-#     else:
-#         print("Not enough GPU hardware devices available")
-# allocate_gpu_memory()
-# device_lib.list_local_devices()
-
 
 class BirdClassfier():
     def __init__(self):
@@ -62,7 +44,7 @@ class BirdClassfier():
             rescale=1/255,
             horizontal_flip=True,
             rotation_range=15,
-            zoom_range=0.1,
+            zoom_range=0.1
         )
         valid_datagen = ImageDataGenerator(rescale=1/255)
         test_datagen = ImageDataGenerator(rescale=1/255)
@@ -73,7 +55,7 @@ class BirdClassfier():
             batch_size=32,
             color_mode='rgb',
             class_mode='sparse',
-            shuffle=True,
+            shuffle=True
         )
 
         validation_generator = valid_datagen.flow_from_directory(
