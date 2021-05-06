@@ -1,4 +1,4 @@
-#%%
+##%%
 import os
 import gc
 import sys
@@ -14,25 +14,51 @@ from pathlib import Path
 from tqdm import tqdm
 from imgaug import augmenters as iaa
 from sklearn.model_selection import StratifiedKFold, KFold
+import tensorflow
+from tensorflow.compat.v1 import ConfigProto
+from tensorflow.compat.v1 import InteractiveSession
 import warnings 
 DATA_DIR = Path('/media/chenhsi/chenhsi/data_sets/imaterialist-fashion-2019-FGVC6')
 ROOT_DIR = Path('/home/chenhsi/Projects/DLkaggle/Fashion')
 IMAGE_DIR = Path('/media/chenhsi/chenhsi/data_sets/imaterialist-fashion-2019-FGVC6/train')
-
+COCO_WEIGHTS_PATH = '/home/chenhsi/Projects/DLkaggle/Fashion/mask_rcnn_coco.h5'
 # For demonstration purpose, the classification ignores attributes (only categories),
 # and the image size is set to 512, which is the same as the size of submission masks
 NUM_CATS = 46
 IMAGE_SIZE = 512
 
 #Dowload Libraries and Pretrained Weights
-os.chdir('Mask_RCNN')
+# os.chdir('Mask_RCNN')
 sys.path.append(str(ROOT_DIR)+'/Mask_RCNN')
 from mrcnn.config import Config
 from mrcnn import utils
 import mrcnn.model as modellib
 from mrcnn import visualize
 from mrcnn.model import log
-COCO_WEIGHTS_PATH = 'mask_rcnn_coco.h5'
+
+
+class Utility():
+    def __init__(self):
+        self.config = ConfigProto()
+        self.config.gpu_options.allow_growth = True
+        self.session = InteractiveSession(config=self.config)
+
+    def allocate_gpu_memory(self, gpu_number=0):
+        physical_devices = tensorflow.config.experimental.list_physical_devices('GPU')
+
+        if physical_devices:
+            try:
+                print("Found {} GPU(s)".format(len(physical_devices)))
+                tensorflow.config.set_visible_devices(physical_devices[gpu_number], 'GPU')
+                tensorflow.config.experimental.set_memory_growth(physical_devices[gpu_number], True)
+                print("#{} GPU memory is allocated".format(gpu_number))
+            except RuntimeError as e:
+                print(e)
+        else:
+            print("Not enough GPU hardware devices available")
+util = Utility()
+util.allocate_gpu_memory()
+
 
 class FashionConfig(Config):
     NAME = "fashion"
@@ -120,20 +146,20 @@ def complete_make_mask(data,IMG_FILE):
     return cat_list, mask_list
 
 img_list = os.listdir(str(IMAGE_DIR))
-for k in img_list[:3]:
-    cat_list1, mask_list1 = complete_make_mask(segment_df, k)
-    plt.figure(figsize=[15,15])
-    plt.subplot(3,5,1)
-    show_img(k)
-    plt.title('Input Image')
-    i=1
-    for mask, cat in zip(mask_list1, cat_list1):
-        mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE), interpolation=cv2.INTER_NEAREST)
-        plt.subplot(3,5,i+1)
-        i+=1
-        plt.imshow(mask,cmap='jet')
-        plt.title(label_names[int(cat)])
-    plt.subplots_adjust(wspace=0.4, hspace=-0.65)
+# for k in img_list[:3]:
+#     cat_list1, mask_list1 = complete_make_mask(segment_df, k)
+#     plt.figure(figsize=[15,15])
+#     plt.subplot(3,5,1)
+#     show_img(k)
+#     plt.title('Input Image')
+#     i=1
+#     for mask, cat in zip(mask_list1, cat_list1):
+#         mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE), interpolation=cv2.INTER_NEAREST)
+#         plt.subplot(3,5,i+1)
+#         i+=1
+#         plt.imshow(mask,cmap='jet')
+#         plt.title(label_names[int(cat)])
+#     plt.subplots_adjust(wspace=0.4, hspace=-0.65)
 
 seg_att_df = segment_df[[len(x)>0 for x in segment_df['AttributeId']]].reset_index(drop=['index'])
 image_df = segment_df.groupby('ImageId')['EncodedPixels', 'CategoryId'].agg(lambda x: list(x))
@@ -199,22 +225,22 @@ class FashionDataset(utils.Dataset):
 dataset = FashionDataset(image_df)
 dataset.prepare()
 
-for i in range(8,10):
-#     image_id = random.choice(dataset.image_ids)
-    image_id = dataset.image_ids[i]
-    print(dataset.image_reference(image_id))
+# for i in range(8,10):
+# #     image_id = random.choice(dataset.image_ids)
+#     image_id = dataset.image_ids[i]
+#     print(dataset.image_reference(image_id))
     
-    image = dataset.load_image(image_id)
-    mask, class_ids = dataset.load_mask(image_id)
-    print('mask_shape:',mask.shape)
-    print('img_shape:',image.shape)
-    print(class_ids)
-    print(dataset.class_names)
-    print(len(dataset.class_names))
-#     plt.figure()
-#     plt.imshow(image)
+#     image = dataset.load_image(image_id)
+#     mask, class_ids = dataset.load_mask(image_id)
+#     print('mask_shape:',mask.shape)
+#     print('img_shape:',image.shape)
+#     print(class_ids)
+#     print(dataset.class_names)
+#     print(len(dataset.class_names))
+# #     plt.figure()
+# #     plt.imshow(image)
+# #     visualize.display_top_masks(image, mask, class_ids, dataset.class_names, limit=4)
 #     visualize.display_top_masks(image, mask, class_ids, dataset.class_names, limit=4)
-    visualize.display_top_masks(image, mask, class_ids, dataset.class_names, limit=4)
 
 
 # This code partially supports k-fold training, 
@@ -388,58 +414,58 @@ print("Missing Images: ", missing_count)
 submission_df.head()
 submission_df.to_csv("submission.csv", index=False)
 
-for i in range(9):
-    image_id = sample_df.sample()['ImageId'].values[0]
-    image_path = str(DATA_DIR/'test'/image_id)
+# for i in range(9):
+#     image_id = sample_df.sample()['ImageId'].values[0]
+#     image_path = str(DATA_DIR/'test'/image_id)
     
-    img = cv2.imread(image_path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+#     img = cv2.imread(image_path)
+#     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     
-    result = model.detect([resize_image(image_path)])
-    r = result[0]
+#     result = model.detect([resize_image(image_path)])
+#     r = result[0]
     
-    if r['masks'].size > 0:
-        masks = np.zeros((img.shape[0], img.shape[1], r['masks'].shape[-1]), dtype=np.uint8)
-        for m in range(r['masks'].shape[-1]):
-            masks[:, :, m] = cv2.resize(r['masks'][:, :, m].astype('uint8'), 
-                                        (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+#     if r['masks'].size > 0:
+#         masks = np.zeros((img.shape[0], img.shape[1], r['masks'].shape[-1]), dtype=np.uint8)
+#         for m in range(r['masks'].shape[-1]):
+#             masks[:, :, m] = cv2.resize(r['masks'][:, :, m].astype('uint8'), 
+#                                         (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
         
-        y_scale = img.shape[0]/IMAGE_SIZE
-        x_scale = img.shape[1]/IMAGE_SIZE
-        rois = (r['rois'] * [y_scale, x_scale, y_scale, x_scale]).astype(int)
+#         y_scale = img.shape[0]/IMAGE_SIZE
+#         x_scale = img.shape[1]/IMAGE_SIZE
+#         rois = (r['rois'] * [y_scale, x_scale, y_scale, x_scale]).astype(int)
         
-        masks, rois = refine_masks(masks, rois)
-    else:
-        masks, rois = r['masks'], r['rois']
+#         masks, rois = refine_masks(masks, rois)
+#     else:
+#         masks, rois = r['masks'], r['rois']
         
-    visualize.display_instances(img, rois, masks, r['class_ids'], 
-                                ['bg']+label_names, r['scores'],
-                                title=image_id, figsize=(12, 12))
+#     visualize.display_instances(img, rois, masks, r['class_ids'], 
+#                                 ['bg']+label_names, r['scores'],
+#                                 title=image_id, figsize=(12, 12))
 
     
 #Saving the apparel images with attributes in different dataframes and image resizing as per InceptionV3 model
 img_id_list, apparel_img_list, cat_list, att_list = [], [], [],[]
 apparel_id_list, att_id_list = [], []
 # for i in range(seg_att_df.shape[0]):
-for i in range(100):
-#     if i%100==0:
-    print(i)
-    img_id_list+=[seg_att_df['ImageId'][i]]
-    mask1 = make_mask(seg_att_df.iloc[i:i+1])
-    mask1 = cv2.resize(mask1, (IMAGE_SIZE2, IMAGE_SIZE2), interpolation=cv2.INTER_NEAREST)  
-    apparel_img_list+=[mask1]
-    apparel_id_list+=[int(seg_att_df['CategoryId'][i])]
-    cat_list+=[label_names[int(seg_att_df['CategoryId'][i])]]
-    att_id_list+=[seg_att_df['AttributeId'][i]]
-    att_list+=[[attribute_names[int(x)] for x in seg_att_df['AttributeId'][i]]]
+# for i in range(100):
+# #     if i%100==0:
+#     print(i)
+#     img_id_list+=[seg_att_df['ImageId'][i]]
+#     mask1 = make_mask(seg_att_df.iloc[i:i+1])
+#     mask1 = cv2.resize(mask1, (IMAGE_SIZE2, IMAGE_SIZE2), interpolation=cv2.INTER_NEAREST)  
+#     apparel_img_list+=[mask1]
+#     apparel_id_list+=[int(seg_att_df['CategoryId'][i])]
+#     cat_list+=[label_names[int(seg_att_df['CategoryId'][i])]]
+#     att_id_list+=[seg_att_df['AttributeId'][i]]
+#     att_list+=[[attribute_names[int(x)] for x in seg_att_df['AttributeId'][i]]]
 image_att = pd.DataFrame({'ImageId':img_id_list,'ApparelImage':apparel_img_list,'ApparelId': apparel_id_list, 
                           'ApparelClass':cat_list,'AttributeId':att_id_list,'AttributeType':att_list})
 
 # for i in range(len(image_att)):
-for i in range(4):
-    plt.figure(figsize=[10,10])
-    plt.imshow(image_att['ApparelImage'][i])
-    plt.title(image_att['ApparelClass'][i]+'\n'+'; '.join(image_att['AttributeType'][i]))
+# for i in range(4):
+#     plt.figure(figsize=[10,10])
+#     plt.imshow(image_att['ApparelImage'][i])
+#     plt.title(image_att['ApparelClass'][i]+'\n'+'; '.join(image_att['AttributeType'][i]))
 
 from keras.applications.inception_v3 import InceptionV3,preprocess_input
 from keras.layers import Dense,BatchNormalization,Dropout,Embedding,RepeatVector
