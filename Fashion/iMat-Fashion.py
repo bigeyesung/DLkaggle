@@ -10,69 +10,47 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import itertools
+import tensorflow
+import warnings
 from pathlib import Path
 from tqdm import tqdm
 from imgaug import augmenters as iaa
 from sklearn.model_selection import StratifiedKFold, KFold
-import tensorflow
 from tensorflow.compat.v1 import ConfigProto
 from tensorflow.compat.v1 import InteractiveSession
-import warnings 
-DATA_DIR = Path('/media/chenhsi/chenhsi/data_sets/imaterialist-fashion-2019-FGVC6')
-ROOT_DIR = Path('/home/chenhsi/Projects/DLkaggle/Fashion')
-IMAGE_DIR = Path('/media/chenhsi/chenhsi/data_sets/imaterialist-fashion-2019-FGVC6/train')
-COCO_WEIGHTS_PATH = '/home/chenhsi/Projects/DLkaggle/Fashion/mask_rcnn_coco.h5'
-# For demonstration purpose, the classification ignores attributes (only categories),
-# and the image size is set to 512, which is the same as the size of submission masks
-NUM_CATS = 46
-IMAGE_SIZE = 512
 
 #Dowload Libraries and Pretrained Weights
 # os.chdir('Mask_RCNN')
 sys.path.append(str(ROOT_DIR)+'/Mask_RCNN')
 from mrcnn.config import Config
 from mrcnn import utils
-import mrcnn.model as modellib
 from mrcnn import visualize
 from mrcnn.model import log
+import mrcnn.model as modellib
+
+#reading files 
+DATA_DIR = Path('/media/chenhsi/chenhsi/data_sets/imaterialist-fashion-2019-FGVC6')
+ROOT_DIR = Path('/home/chenhsi/Projects/DLkaggle/Fashion')
+IMAGE_DIR = Path('/media/chenhsi/chenhsi/data_sets/imaterialist-fashion-2019-FGVC6/train')
+COCO_WEIGHTS_PATH = '/home/chenhsi/Projects/DLkaggle/Fashion/mask_rcnn_coco.h5'
+
+# For demonstration purpose, the classification ignores attributes (only categories),
+# and the image size is set to 512, which is the same as the size of submission masks
+NUM_CATS = 46
+IMAGE_SIZE = 512
 
 
-class Utility():
-    def __init__(self):
-        self.config = ConfigProto()
-        self.config.gpu_options.allow_growth = True
-        self.session = InteractiveSession(config=self.config)
 
-    def allocate_gpu_memory(self, gpu_number=0):
-        physical_devices = tensorflow.config.experimental.list_physical_devices('GPU')
-
-        if physical_devices:
-            try:
-                print("Found {} GPU(s)".format(len(physical_devices)))
-                tensorflow.config.set_visible_devices(physical_devices[gpu_number], 'GPU')
-                tensorflow.config.experimental.set_memory_growth(physical_devices[gpu_number], True)
-                print("#{} GPU memory is allocated".format(gpu_number))
-            except RuntimeError as e:
-                print(e)
-        else:
-            print("Not enough GPU hardware devices available")
-util = Utility()
-util.allocate_gpu_memory()
-
-
+#Mask R-CNN has a load of hyperparameters. I only adjust some of them.
 class FashionConfig(Config):
     NAME = "fashion"
     NUM_CLASSES = NUM_CATS + 1 # +1 for the background class
-    
     GPU_COUNT = 1
     IMAGES_PER_GPU = 4 # a memory error occurs when IMAGES_PER_GPU is too high
-    
     BACKBONE = 'resnet50'
-    
     IMAGE_MIN_DIM = IMAGE_SIZE
     IMAGE_MAX_DIM = IMAGE_SIZE    
     IMAGE_RESIZE_MODE = 'none'
-    
     RPN_ANCHOR_SCALES = (16, 32, 64, 128, 256)
     #DETECTION_NMS_THRESHOLD = 0.0
     
@@ -86,10 +64,10 @@ class FashionConfig(Config):
     
 config = FashionConfig()
 config.display()
+
 #Make Datasets
 with open(DATA_DIR/"label_descriptions.json") as f:
     label_descriptions = json.load(f)
-
 label_names = [x['name'] for x in label_descriptions['categories']]
 attribute_names = [x['name'] for x in label_descriptions['attributes']]
 print(len(label_names))
