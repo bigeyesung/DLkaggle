@@ -39,7 +39,11 @@ COCO_WEIGHTS_PATH = '/home/chenhsi/Projects/DLkaggle/Fashion/mask_rcnn_coco.h5'
 NUM_CATS = 46
 IMAGE_SIZE = 512
 
-
+def resize_image(image_path):
+    img = cv2.imread(image_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE), interpolation=cv2.INTER_AREA)  
+    return img
 
 #Mask R-CNN has a load of hyperparameters. I only adjust some of them.
 class FashionConfig(Config):
@@ -64,95 +68,96 @@ class FashionConfig(Config):
     
 config = FashionConfig()
 config.display()
+class TuneDataset():
+    def __init__(self):
+        self.segment_df=None
+        
+    def SetDataset(self,file):
+        #Make Datasets
+        with open(DATA_DIR/"label_descriptions.json") as f:
+            label_descriptions = json.load(f)
+        label_names = [label['name'] for label in label_descriptions['categories']]
+        attribute_names = [label['name'] for label in label_descriptions['attributes']]
+        print(len(label_names))
+        print(len(attribute_names))
+        self.segment_df = pd.read_csv(DATA_DIR/"train.csv")
+        print('le_segment_df',len(self.segment_df))
+        print(self.segment_df.head())
+        multilabel_percent = len(self.segment_df[self.segment_df['ClassId'].str.contains('_')])/len(self.segment_df)*100
+        print(f"Segments that have attributes: {multilabel_percent:.2f}%")
+        #Segments that contain attributes are only 3.46% of data, and according to the host, 80% of images have no attribute. So, in the first step, we can only deal with categories to reduce the complexity of the task
 
-#Make Datasets
-with open(DATA_DIR/"label_descriptions.json") as f:
-    label_descriptions = json.load(f)
-label_names = [x['name'] for x in label_descriptions['categories']]
-attribute_names = [x['name'] for x in label_descriptions['attributes']]
-print(len(label_names))
-print(len(attribute_names))
-segment_df = pd.read_csv(DATA_DIR/"train.csv")
-print('le_segment_df',len(segment_df))
-print(segment_df.head())
-multilabel_percent = len(segment_df[segment_df['ClassId'].str.contains('_')])/len(segment_df)*100
-print(f"Segments that have attributes: {multilabel_percent:.2f}%")
+        self.segment_df['CategoryId'] = self.segment_df['ClassId'].str.split('_').str[0]
+        self.segment_df['AttributeId'] = self.segment_df['ClassId'].str.split('_').str[1:]
+        print("Total segments: ", len(self.segment_df))
+        print('max_id:',max(list(map(lambda x:int(x),self.segment_df['CategoryId'] ))))
+        self.segment_df.head()
 
-
-segment_df['CategoryId'] = segment_df['ClassId'].str.split('_').str[0]
-segment_df['AttributeId'] = segment_df['ClassId'].str.split('_').str[1:]
-print("Total segments: ", len(segment_df))
-print('max_id:',max(list(map(lambda x:int(x),segment_df['CategoryId'] ))))
-segment_df.head()
-
-def show_img(IMG_FILE):
-    I = cv2.imread(str(IMAGE_DIR) +"/"+ IMG_FILE, cv2.IMREAD_COLOR)
-    I = cv2.cvtColor(I, cv2.COLOR_BGR2RGB)
-    I = cv2.resize(I, (IMAGE_SIZE, IMAGE_SIZE), interpolation=cv2.INTER_AREA)  
-    plt.imshow(I) 
+    def show_img(self, IMG_FILE):
+        I = cv2.imread(str(IMAGE_DIR) +"/"+ IMG_FILE, cv2.IMREAD_COLOR)
+        I = cv2.cvtColor(I, cv2.COLOR_BGR2RGB)
+        I = cv2.resize(I, (IMAGE_SIZE, IMAGE_SIZE), interpolation=cv2.INTER_AREA)  
+        plt.imshow(I) 
     
-def complete_make_mask(data,IMG_FILE):
-    mask_list, cat_list = [], []
-    df = data[data.ImageId == IMG_FILE].reset_index(drop = True)
-    H = df.iloc[0,2]
-    W = df.iloc[0,3]
-    
-    print("Correct Category :", sorted(set((list(df.CategoryId)))))
-    # 1d mask 
-    
-    for line in df[['EncodedPixels','CategoryId']].iterrows():
+    def complete_make_mask(self, data, IMG_FILE):
+        mask_list, cat_list = [], []
+        df = data[data.ImageId == IMG_FILE].reset_index(drop = True)
+        H = df.iloc[0,2]
+        W = df.iloc[0,3]
+        
+        print("Correct Category :", sorted(set((list(df.CategoryId)))))
         # 1d mask 
-        mask = np.full(H*W,dtype='int',fill_value = -1)
+        for line in df[['EncodedPixels','CategoryId']].iterrows():
+            # 1d mask 
+            mask = np.full(H*W,dtype='int',fill_value = -1)
+            
+            EncodedPixels = line[1][0]
+            Category = line[1][1]
+            
+            pixel_loc = list(map(int,EncodedPixels.split(' ')[0::2]))
+            iter_num =  list(map(int,EncodedPixels.split(' ')[1::2]))
+            for p,i in zip(pixel_loc,iter_num):
+                mask[p:(p+i)] = Category
+            mask = mask.reshape(W,H).T
+    #         print(Category, mask.shape)
+            mask_list+=[mask]
+            cat_list+=[Category]
         
-        EncodedPixels = line[1][0]
-        Category = line[1][1]
-        
-        pixel_loc = list(map(int,EncodedPixels.split(' ')[0::2]))
-        iter_num =  list(map(int,EncodedPixels.split(' ')[1::2]))
-        for p,i in zip(pixel_loc,iter_num):
-            mask[p:(p+i)] = Category
-        mask = mask.reshape(W,H).T
-#         print(Category, mask.shape)
-        mask_list+=[mask]
-        cat_list+=[Category]
-    
-#     print("Output :",sorted(set(list(mask))))
-#     print('mask:\n',set(list(mask)))
-#     mask = mask.reshape(W,H).T
-    #rle
-#     return mask
-    return cat_list, mask_list
+    #     print("Output :",sorted(set(list(mask))))
+    #     print('mask:\n',set(list(mask)))
+    #     mask = mask.reshape(W,H).T
+        #rle
+    #     return mask
+        return cat_list, mask_list
+    def TestFunc(self):
+        img_list = os.listdir(str(IMAGE_DIR))
+        for k in img_list[:3]:
+            cat_list1, mask_list1 = complete_make_mask(self.segment_df, k)
+            plt.figure(figsize=[15,15])
+            plt.subplot(3,5,1)
+            show_img(k)
+            plt.title('Input Image')
+            i=1
+            for mask, cat in zip(mask_list1, cat_list1):
+                mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE), interpolation=cv2.INTER_NEAREST)
+                plt.subplot(3,5,i+1)
+                i+=1
+                plt.imshow(mask,cmap='jet')
+                plt.title(label_names[int(cat)])
+            plt.subplots_adjust(wspace=0.4, hspace=-0.65)
 
-img_list = os.listdir(str(IMAGE_DIR))
-# for k in img_list[:3]:
-#     cat_list1, mask_list1 = complete_make_mask(segment_df, k)
-#     plt.figure(figsize=[15,15])
-#     plt.subplot(3,5,1)
-#     show_img(k)
-#     plt.title('Input Image')
-#     i=1
-#     for mask, cat in zip(mask_list1, cat_list1):
-#         mask = cv2.resize(mask, (IMAGE_SIZE, IMAGE_SIZE), interpolation=cv2.INTER_NEAREST)
-#         plt.subplot(3,5,i+1)
-#         i+=1
-#         plt.imshow(mask,cmap='jet')
-#         plt.title(label_names[int(cat)])
-#     plt.subplots_adjust(wspace=0.4, hspace=-0.65)
+        seg_att_df = self.segment_df[[len(x)>0 for x in self.segment_df['AttributeId']]].reset_index(drop=['index'])
+        image_df = self.segment_df.groupby('ImageId')['EncodedPixels', 'CategoryId'].agg(lambda x: list(x))
+        size_df = self.segment_df.groupby('ImageId')['Height', 'Width'].mean()
+        image_df = image_df.join(size_df, on='ImageId')
 
-seg_att_df = segment_df[[len(x)>0 for x in segment_df['AttributeId']]].reset_index(drop=['index'])
-image_df = segment_df.groupby('ImageId')['EncodedPixels', 'CategoryId'].agg(lambda x: list(x))
-size_df = segment_df.groupby('ImageId')['Height', 'Width'].mean()
-image_df = image_df.join(size_df, on='ImageId')
-
-# image_df = image_df.iloc[:10]
-print("Total images: ", len(image_df))
-image_df.head()
-
-def resize_image(image_path):
-    img = cv2.imread(image_path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE), interpolation=cv2.INTER_AREA)  
-    return img
+        # image_df = image_df.iloc[:10]
+        print("Total images: ", len(image_df))
+        image_df.head()
+        return seg_att_df, image_df
+tuner=TuneDataset()
+tuner.SetDataset()
+seg_att_df, image_df = tuner.TestFunc()
 
 class FashionDataset(utils.Dataset):
 
@@ -194,7 +199,6 @@ class FashionDataset(utils.Dataset):
 
             sub_mask = sub_mask.reshape((info['height'], info['width']), order='F')
             sub_mask = cv2.resize(sub_mask, (IMAGE_SIZE, IMAGE_SIZE), interpolation=cv2.INTER_NEAREST)
-            
             mask[:, :, m] = sub_mask
             labels.append(int(label)+1)
             
@@ -203,29 +207,27 @@ class FashionDataset(utils.Dataset):
 dataset = FashionDataset(image_df)
 dataset.prepare()
 
-# for i in range(8,10):
-# #     image_id = random.choice(dataset.image_ids)
-#     image_id = dataset.image_ids[i]
-#     print(dataset.image_reference(image_id))
-    
-#     image = dataset.load_image(image_id)
-#     mask, class_ids = dataset.load_mask(image_id)
-#     print('mask_shape:',mask.shape)
-#     print('img_shape:',image.shape)
-#     print(class_ids)
-#     print(dataset.class_names)
-#     print(len(dataset.class_names))
-# #     plt.figure()
-# #     plt.imshow(image)
-# #     visualize.display_top_masks(image, mask, class_ids, dataset.class_names, limit=4)
+for i in range(8,10):
+#     image_id = random.choice(dataset.image_ids)
+    image_id = dataset.image_ids[i]
+    print(dataset.image_reference(image_id))
+    image = dataset.load_image(image_id)
+    mask, class_ids = dataset.load_mask(image_id)
+    print('mask_shape:',mask.shape)
+    print('img_shape:',image.shape)
+    print(class_ids)
+    print(dataset.class_names)
+    print(len(dataset.class_names))
+#     plt.figure()
+#     plt.imshow(image)
 #     visualize.display_top_masks(image, mask, class_ids, dataset.class_names, limit=4)
+    visualize.display_top_masks(image, mask, class_ids, dataset.class_names, limit=4)
 
 
 # This code partially supports k-fold training, 
 # you can specify the fold to train and the total number of folds here
 FOLD = 0
 N_FOLDS = 5
-
 kf = KFold(n_splits=N_FOLDS, random_state=42, shuffle=True)
 splits = kf.split(image_df) # ideally, this should be multilabel stratification
 
@@ -238,7 +240,6 @@ train_df, valid_df = get_fold()
 
 train_dataset = FashionDataset(train_df)
 train_dataset.prepare()
-
 valid_dataset = FashionDataset(valid_df)
 valid_dataset.prepare()
 
@@ -270,14 +271,15 @@ EPOCHS = [1, 2, 3]
 
 warnings.filterwarnings("ignore")
 model = modellib.MaskRCNN(mode='training', config=config, model_dir=ROOT_DIR)
-
-model.load_weights(COCO_WEIGHTS_PATH, by_name=True, exclude=[
-    'mrcnn_class_logits', 'mrcnn_bbox_fc', 'mrcnn_bbox', 'mrcnn_mask'])
+model.load_weights(COCO_WEIGHTS_PATH, by_name=True, exclude=[   'mrcnn_class_logits', 
+                                                                'mrcnn_bbox_fc', 
+                                                                'mrcnn_bbox', 
+                                                                'mrcnn_mask'])
 
 augmentation = iaa.Sequential([
     iaa.Fliplr(0.5) # only horizontal flip here
 ])
-
+#firstly training only "head layer"
 model.train(train_dataset, valid_dataset,
             learning_rate=LR*2, # train heads with higher lr to speedup learning
             epochs=EPOCHS[0],
@@ -293,18 +295,19 @@ model.train(train_dataset, valid_dataset,
 
 new_history = model.keras_model.history.history
 for k in new_history: history[k] = history[k] + new_history[k]
-model.train(train_dataset, valid_dataset,
+#we reduce LR and train again.
+model.train(train_dataset, 
+            valid_dataset,
             learning_rate=LR/5,
             epochs=EPOCHS[2],
             layers='all',
             augmentation=augmentation)
-
 new_history = model.keras_model.history.history
 for k in new_history: history[k] = history[k] + new_history[k]
+
+#visualize training history and choose the best epoch.
 epochs = range(EPOCHS[-1])
-
 plt.figure(figsize=(18, 6))
-
 plt.subplot(131)
 plt.plot(epochs, history['loss'], label="train loss")
 plt.plot(epochs, history['val_loss'], label="valid loss")
@@ -680,9 +683,6 @@ def generate_desc(model, photo, max_length):
 
 "prediction on new images"
 val_att = train_att.copy()
-
-
-
 for i in range(3):
     print(i)
     img = val_att['ApparelImage'][i]
