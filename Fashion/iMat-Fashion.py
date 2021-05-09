@@ -320,7 +320,6 @@ plt.subplot(133)
 plt.plot(epochs, history['mrcnn_mask_loss'], label="train mask loss")
 plt.plot(epochs, history['val_mrcnn_mask_loss'], label="valid mask loss")
 plt.legend()
-
 plt.show()
 best_epoch = np.argmin(history["val_loss"]) + 1
 print("Best epoch: ", best_epoch)
@@ -329,6 +328,7 @@ print("Valid loss: ", history["val_loss"][best_epoch-1])
 #prediction
 glob_list = glob.glob(f'/kaggle/working/fashion*/mask_rcnn_fashion_{best_epoch:04d}.h5')
 model_path = glob_list[0] if glob_list else ''
+
 class InferenceConfig(FashionConfig):
     GPU_COUNT = 1
     IMAGES_PER_GPU = 1
@@ -342,6 +342,10 @@ model = modellib.MaskRCNN(mode='inference',
 assert model_path != '', "Provide path to trained weights"
 print("Loading weights from ", model_path)
 model.load_weights(model_path, by_name=True)
+with open('MODEL.pkl', 'wb') as fid:
+    pickle.dump(model, fid)
+
+#load submission data
 sample_df = pd.read_csv(DATA_DIR/"sample_submission.csv")
 sample_df.head()
 sample_df['EncodedPixels'][0]
@@ -356,7 +360,8 @@ def to_rle(bits):
         pos += len(group_list)
     return rle
 
-# Since the submission system does not permit overlapped masks, we have to fix them
+# Since the submission system does not permit overlapped masks, 
+# we have to fix them
 def refine_masks(masks, rois):
     areas = np.sum(masks.reshape(-1, masks.shape[-1]), axis=0)
     mask_index = np.argsort(areas)
@@ -395,301 +400,29 @@ print("Missing Images: ", missing_count)
 submission_df.head()
 submission_df.to_csv("submission.csv", index=False)
 
-# for i in range(9):
-#     image_id = sample_df.sample()['ImageId'].values[0]
-#     image_path = str(DATA_DIR/'test'/image_id)
-    
-#     img = cv2.imread(image_path)
-#     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    
-#     result = model.detect([resize_image(image_path)])
-#     r = result[0]
-    
-#     if r['masks'].size > 0:
-#         masks = np.zeros((img.shape[0], img.shape[1], r['masks'].shape[-1]), dtype=np.uint8)
-#         for m in range(r['masks'].shape[-1]):
-#             masks[:, :, m] = cv2.resize(r['masks'][:, :, m].astype('uint8'), 
-#                                         (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+#visualize the results
+for i in range(9):
+    image_id = sample_df.sample()['ImageId'].values[0]
+    image_path = str(DATA_DIR/'test'/image_id)
+    img = cv2.imread(image_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    result = model.detect([resize_image(image_path)])
+    r = result[0]
+    if r['masks'].size > 0:
+        masks = np.zeros((img.shape[0], img.shape[1], r['masks'].shape[-1]), dtype=np.uint8)
+        for m in range(r['masks'].shape[-1]):
+            masks[:, :, m] = cv2.resize(r['masks'][:, :, m].astype('uint8'), 
+                                        (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)        
+        y_scale = img.shape[0]/IMAGE_SIZE
+        x_scale = img.shape[1]/IMAGE_SIZE
+        rois = (r['rois'] * [y_scale, x_scale, y_scale, x_scale]).astype(int)
         
-#         y_scale = img.shape[0]/IMAGE_SIZE
-#         x_scale = img.shape[1]/IMAGE_SIZE
-#         rois = (r['rois'] * [y_scale, x_scale, y_scale, x_scale]).astype(int)
+        masks, rois = refine_masks(masks, rois)
+    else:
+        masks, rois = r['masks'], r['rois']
         
-#         masks, rois = refine_masks(masks, rois)
-#     else:
-#         masks, rois = r['masks'], r['rois']
-        
-#     visualize.display_instances(img, rois, masks, r['class_ids'], 
-#                                 ['bg']+label_names, r['scores'],
-#                                 title=image_id, figsize=(12, 12))
+    visualize.display_instances(img, rois, masks, r['class_ids'], 
+                                ['bg']+label_names, r['scores'],
+                                title=image_id, figsize=(12, 12))
 
-    
-#Saving the apparel images with attributes in different dataframes and image resizing as per InceptionV3 model
-img_id_list, apparel_img_list, cat_list, att_list = [], [], [],[]
-apparel_id_list, att_id_list = [], []
-# for i in range(seg_att_df.shape[0]):
-# for i in range(100):
-# #     if i%100==0:
-#     print(i)
-#     img_id_list+=[seg_att_df['ImageId'][i]]
-#     mask1 = make_mask(seg_att_df.iloc[i:i+1])
-#     mask1 = cv2.resize(mask1, (IMAGE_SIZE2, IMAGE_SIZE2), interpolation=cv2.INTER_NEAREST)  
-#     apparel_img_list+=[mask1]
-#     apparel_id_list+=[int(seg_att_df['CategoryId'][i])]
-#     cat_list+=[label_names[int(seg_att_df['CategoryId'][i])]]
-#     att_id_list+=[seg_att_df['AttributeId'][i]]
-#     att_list+=[[attribute_names[int(x)] for x in seg_att_df['AttributeId'][i]]]
-image_att = pd.DataFrame({'ImageId':img_id_list,'ApparelImage':apparel_img_list,'ApparelId': apparel_id_list, 
-                          'ApparelClass':cat_list,'AttributeId':att_id_list,'AttributeType':att_list})
-
-# for i in range(len(image_att)):
-# for i in range(4):
-#     plt.figure(figsize=[10,10])
-#     plt.imshow(image_att['ApparelImage'][i])
-#     plt.title(image_att['ApparelClass'][i]+'\n'+'; '.join(image_att['AttributeType'][i]))
-
-from keras.applications.inception_v3 import InceptionV3,preprocess_input
-from keras.layers import Dense,BatchNormalization,Dropout,Embedding,RepeatVector
-from keras.preprocessing.image import load_img, img_to_array
-from keras.models import Sequential
-from keras.models import Model
-from pickle import dump, load
-from keras.models import load_model
-import numpy as np
-inception = InceptionV3(weights='imagenet')
-
-# pop the last softmax layer and freezing the remaining layers (re-structure the model)
-inception.layers.pop()
-#
-for layer in inception.layers:
-    layer.trainable = False
-
-# building the final model
-pre_trained_incept_v3 = Model(input = inception.input,output = inception.layers[-1].output)
-pre_trained_incept_v3.summary()
-msk = np.random.rand(len(image_att)) <= 0.8
-train_att = image_att[msk].reset_index(drop=True)
-val_att = image_att[~msk].reset_index(drop=True)
-from keras.applications.inception_v3 import InceptionV3,preprocess_input
-from keras.layers import Dense,BatchNormalization,Dropout,Embedding,RepeatVector
-from keras.preprocessing.image import load_img, img_to_array
-import numpy as np
-
-TARGET_SIZE = (299,299) # needed to convert the image as per pre-trained inceptionv3 requirements
-
-img_feat_list = []
-for i in range(len(train_att)):
-    img = image_att['ApparelImage'][i]
-    img = np.stack((img,)*3, axis=-1) # creating gray scale to 3-channel image
-    # Converting image to array
-    img_array = img_to_array(img)
-    nimage = preprocess_input(img_array)
-    # Adding one more dimesion
-    nimage = np.expand_dims(nimage, axis=0)    
-    fea_vec = pre_trained_incept_v3.predict(nimage)
-    fea_vec = np.reshape(fea_vec, fea_vec.shape[1]) # reshape from (1, 2048) to (2048, )
-    img_feat_list+=[fea_vec]
-train_att['img_feat'] = img_feat_list
-
-from keras.preprocessing.text import Tokenizer
-# as we'll be building it as image captioning model, we need to add some fixed start and end attributes"
-train_att['AttributeId'] = [[92]+x+[93] for x in train_att['AttributeId']]
-train_att['AttributeType'] = [['att_start']+x+['att_end'] for x in train_att['AttributeType']]
-
-total_train_att = np.concatenate(train_att['AttributeId'].values).astype(int)
-print("Total Apparel images: ", len(train_att))
-print("All atributes throughout apparel images: ", len(total_train_att))
-
-attribute_names+=['att_start','att_end']
-
-plt.figure(figsize=(12, 3))
-values, counts = np.unique(total_train_att, return_counts=True)
-plt.bar(values, counts)
-plt.xticks(values, [attribute_names[x] for x in values], rotation='vertical')
-plt.show()
-
-#currently, dropping apparel attributes with freq. < 10
-final_val = values[counts>=2]
-final_att = [attribute_names[x] for x in final_val]
-
-train_att['Final_att'] = [[x for x in z if x in final_att] for z in train_att['AttributeType']]
-
-max_no = max([len(x) for x in train_att['Final_att']])
-print('Max. number of attributes:', max_no)
-vocab_size = len(final_att) + 1
-print('Feature vocab size:', vocab_size)
-
-ixtoword = {}
-wordtoix = {}
-
-ix = 1
-for w in final_att:
-    wordtoix[w] = ix
-    ixtoword[ix] = w
-    ix += 1
-# token = Tokenizer(num_words=vocab_size)
-# token.fit_on_texts(final_att)
-
-ixtoword = {}
-wordtoix = {}
-ix = 1
-for w in final_att:
-    wordtoix[w] = ix
-    ixtoword[ix] = w
-    ix += 1
-
-from keras.models import Model,Input
-from keras.applications.inception_v3 import InceptionV3,preprocess_input
-from keras.layers import Embedding,Dense,BatchNormalization,Dropout,LSTM,add
-from keras.utils import plot_model
-
-from keras.preprocessing.sequence import pad_sequences
-from keras.utils.np_utils import to_categorical
-import numpy as np
-
-def combined_model(MAX_LENGTH,VOCAB_SIZE):
-    "model parameters"
-#    NPIX = 299 # required image shape for pre-trained inceptionnv3 model 
-#    TARGET_SIZE = (NPIX,NPIX,3)
-    EMBEDDING_SIZE = 256 #
-    
-    # partial caption sequence model    
-    inputs2 = Input(shape=(MAX_LENGTH,))
-    se1 = Embedding(VOCAB_SIZE, EMBEDDING_SIZE, mask_zero=True)(inputs2)
-    se2 = Dropout(0.5)(se1)
-    se3 = LSTM(EMBEDDING_SIZE)(se2) 
-    
-    
-    # image feature extractor model
-    inputs1 = Input(shape=(2048,)) # iceptionnv3
-    fe1 = Dropout(0.5)(inputs1)
-    fe2 = Dense(EMBEDDING_SIZE, activation='relu')(fe1)
-    
-    
-    
-    decoder1 = add([fe2, se3])
-    decoder2 = Dense(EMBEDDING_SIZE, activation='relu')(decoder1) 
-    #decoder2 = Dense(50, activation='relu')(decoder1) 
-    outputs = Dense(VOCAB_SIZE, activation='softmax')(decoder2)
-    
-    
-    # merge the two input models
-    # image_feature + partial caption ===> output
-    model = Model(inputs=[inputs1, inputs2], outputs=outputs) 
-    
-    # setting wight of embedded matrix that we saved earlier for words
-#     with open("embedding_matrix.pkl","rb") as f:
-#         embedding_matrix = load(f)   
-#     model.layers[2].set_weights([embedding_matrix])
-#     model.layers[2].trainable = False
-    model.compile(loss='categorical_crossentropy', optimizer='adam')
-
-    return model
-
-def data_generator(train_att, MAX_LENGTH,VOCAB_SIZE, num_photos_per_batch):
-    X1, X2, y = list(), list(), list()
-    n=0
-    for i in range(len(train_att)):
-        n+=1
-        photo = train_att['img_feat'][i]
-        att_list = list(train_att['Final_att'][i])
-        
-        seq = [wordtoix[x] for x in att_list]
-        for i in range(1,len(seq)):
-            in_seq , op_seq = seq[:i],seq[i]
-            #converting input sequence to fix length
-            in_seq = pad_sequences([in_seq],maxlen=MAX_LENGTH,padding="post")[0]
-            # converting op_seq to vocabulary size
-#                    print(op_seq)
-            op_seq = to_categorical([op_seq],num_classes=VOCAB_SIZE)[0]
-#                    try:
-#                        op_seq = to_categorical([op_seq],num_classes=VOCAB_SIZE)[0]
-#                    except:
-#                        op_seq = np.array([0]*VOCAB_SIZE)
-            X1.append(photo)
-            X2.append(in_seq)
-            y.append(op_seq)
-        # yield the batch data
-        if n==num_photos_per_batch:
-            yield [[np.array(X1), np.array(X2)], np.array(y)]
-            X1, X2, y = list(), list(), list()
-            n=0
-
-                
-# image feature extracted file
-train_image_extracted = train_att['img_feat']
-
-#"load train attributes
-train_descriptions = train_att['Final_att']
-
-
-model = combined_model(max_length, vocab_size) #
-
-epochs = 10
-
-
-len(train_descriptions)
-
-
-for i in range(epochs):
-    batch_size = number_pics_per_batch = 5
-    steps = len(train_descriptions)//number_pics_per_batch
-    generator = data_generator(train_att,max_length, vocab_size,number_pics_per_batch)
-    model.fit_generator(generator, epochs=1, steps_per_epoch=steps, verbose=1)
-
-att_prediction_model = model
-# extract features from each photo in the directory
-def extract_features(img):
-    img = np.stack((img,)*3, axis=-1) # creating gray scale to 3-channel image
-    # Converting image to array
-    img_array = img_to_array(img)
-    nimage = preprocess_input(img_array)
-    # Adding one more dimesion
-    nimage = np.expand_dims(nimage, axis=0)    
-    fea_vec = pre_trained_incept_v3.predict(nimage)
-    fea_vec = np.reshape(fea_vec, fea_vec.shape[1]) # reshape from (1, 2048) to (2048, )
-    return fea_vec
-
-
-# generate a description for an image
-def generate_desc(model, photo, max_length):
-    # seed the generation process
-    sequence = ['att_start']
-    photo = photo.reshape(1,2048)
-
-    # iterate over the whole length of the sequence
-    for i in range(max_length):
-        # integer encode input sequence
-        seq = [wordtoix[x] for x in sequence]
-        # pad input
-        seq1 = pad_sequences([seq], maxlen=max_length)
-        # predict next word
-        yhat = model.predict([photo,seq1], verbose=0)
-        # convert probability to integer
-        yhat = np.argmax(yhat)
-        # map integer to word
-        word = ixtoword[yhat]
-        # stop if we cannot map the word
-        if word is None:
-            break
-        # append as input for generating the next word
-        sequence+=[word]
-        # stop if we predict the end of the sequence
-        if word == 'att_end':
-            break
-    return sequence
-        
- 
-
-"prediction on new images"
-val_att = train_att.copy()
-for i in range(3):
-    print(i)
-    img = val_att['ApparelImage'][i]
-    plt.figure()
-    plt.imshow(img)
-    photo = extract_features(img)
-    description = generate_desc(att_prediction_model, photo, max_length)
-    plt.title('pred. apparel attributes:\n'+'; '.join([x for x in description if x not in ['att_start', 'att_end']]))
-
-# %%
+  
