@@ -1,4 +1,4 @@
-##%%
+#%%
 import os
 import gc
 import sys
@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import itertools
 import tensorflow
 import warnings
+import pickle
 from pathlib import Path
 from tqdm import tqdm
 from imgaug import augmenters as iaa
@@ -21,7 +22,6 @@ from tensorflow.compat.v1 import InteractiveSession
 
 #Dowload Libraries and Pretrained Weights
 # os.chdir('Mask_RCNN')
-sys.path.append(str(ROOT_DIR)+'/Mask_RCNN')
 from mrcnn.config import Config
 from mrcnn import utils
 from mrcnn import visualize
@@ -34,11 +34,35 @@ ROOT_DIR = Path('/home/chenhsi/Projects/DLkaggle/Fashion')
 IMAGE_DIR = Path('/media/chenhsi/chenhsi/data_sets/imaterialist-fashion-2019-FGVC6/train')
 COCO_WEIGHTS_PATH = '/home/chenhsi/Projects/DLkaggle/Fashion/mask_rcnn_coco.h5'
 
+sys.path.append(str(ROOT_DIR)+'/Mask_RCNN')
 # For demonstration purpose, the classification ignores attributes (only categories),
 # and the image size is set to 512, which is the same as the size of submission masks
 NUM_CATS = 46
 IMAGE_SIZE = 512
 
+
+class Utility():
+    def __init__(self):
+        self.config = ConfigProto()
+        self.config.gpu_options.allow_growth = True
+        self.session = InteractiveSession(config=self.config)
+
+    def allocate_gpu_memory(self, gpu_number=0):
+        physical_devices = tensorflow.config.experimental.list_physical_devices('GPU')
+
+        if physical_devices:
+            try:
+                print("Found {} GPU(s)".format(len(physical_devices)))
+                tensorflow.config.set_visible_devices(physical_devices[gpu_number], 'GPU')
+                tensorflow.config.experimental.set_memory_growth(physical_devices[gpu_number], True)
+                print("#{} GPU memory is allocated".format(gpu_number))
+            except RuntimeError as e:
+                print(e)
+        else:
+            print("Not enough GPU hardware devices available")
+
+util = Utility()
+util.allocate_gpu_memory()
 def resize_image(image_path):
     img = cv2.imread(image_path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -68,17 +92,18 @@ class FashionConfig(Config):
     
 config = FashionConfig()
 config.display()
+
 class TuneDataset():
     def __init__(self):
         self.segment_df=None
-        
-    def SetDataset(self,file):
+        self.label_names=None
+    def SetDataset(self,filePath):
         #Make Datasets
-        with open(DATA_DIR/"label_descriptions.json") as f:
+        with open(filePath) as f:
             label_descriptions = json.load(f)
-        label_names = [label['name'] for label in label_descriptions['categories']]
+        self.label_names = [label['name'] for label in label_descriptions['categories']]
         attribute_names = [label['name'] for label in label_descriptions['attributes']]
-        print(len(label_names))
+        print(len(self.label_names))
         print(len(attribute_names))
         self.segment_df = pd.read_csv(DATA_DIR/"train.csv")
         print('le_segment_df',len(self.segment_df))
@@ -129,13 +154,14 @@ class TuneDataset():
         #rle
     #     return mask
         return cat_list, mask_list
+
     def TestFunc(self):
         img_list = os.listdir(str(IMAGE_DIR))
         for k in img_list[:3]:
-            cat_list1, mask_list1 = complete_make_mask(self.segment_df, k)
+            cat_list1, mask_list1 = self.complete_make_mask(self.segment_df, k)
             plt.figure(figsize=[15,15])
             plt.subplot(3,5,1)
-            show_img(k)
+            self.show_img(k)
             plt.title('Input Image')
             i=1
             for mask, cat in zip(mask_list1, cat_list1):
@@ -143,7 +169,7 @@ class TuneDataset():
                 plt.subplot(3,5,i+1)
                 i+=1
                 plt.imshow(mask,cmap='jet')
-                plt.title(label_names[int(cat)])
+                plt.title(self.label_names[int(cat)])
             plt.subplots_adjust(wspace=0.4, hspace=-0.65)
 
         seg_att_df = self.segment_df[[len(x)>0 for x in self.segment_df['AttributeId']]].reset_index(drop=['index'])
@@ -154,10 +180,11 @@ class TuneDataset():
         # image_df = image_df.iloc[:10]
         print("Total images: ", len(image_df))
         image_df.head()
-        return seg_att_df, image_df
+        return seg_att_df, image_df, self.label_names
+
 tuner=TuneDataset()
-tuner.SetDataset()
-seg_att_df, image_df = tuner.TestFunc()
+tuner.SetDataset(DATA_DIR/"label_descriptions.json")
+seg_att_df, image_df, label_names = tuner.TestFunc()
 
 class FashionDataset(utils.Dataset):
 
@@ -266,7 +293,7 @@ plt.show()
 # Note that any hyperparameters here, such as LR, may still not be optimal
 LR = 1e-4
 # EPOCHS = [2, 6, 8]
-EPOCHS = [1, 2, 3]
+EPOCHS = [10, 20, 30]
 
 
 warnings.filterwarnings("ignore")
@@ -326,29 +353,29 @@ print("Best epoch: ", best_epoch)
 print("Valid loss: ", history["val_loss"][best_epoch-1])
 
 #prediction
-glob_list = glob.glob(f'/kaggle/working/fashion*/mask_rcnn_fashion_{best_epoch:04d}.h5')
+glob_list = glob.glob(f'/home/chenhsi/Projects/DLkaggle/Fashion/fashion*/mask_rcnn_fashion_{best_epoch:04d}.h5')
 model_path = glob_list[0] if glob_list else ''
 
 class InferenceConfig(FashionConfig):
     GPU_COUNT = 1
     IMAGES_PER_GPU = 1
-
+#create a model in inference mode
 inference_config = InferenceConfig()
-
-model = modellib.MaskRCNN(mode='inference', 
-                          config=inference_config,
-                          model_dir=ROOT_DIR)
-
+model = modellib.MaskRCNN(mode='inference', config=inference_config, model_dir=ROOT_DIR)
 assert model_path != '', "Provide path to trained weights"
-print("Loading weights from ", model_path)
+print("Loading trained weights from ", model_path)
 model.load_weights(model_path, by_name=True)
-with open('MODEL.pkl', 'wb') as fid:
-    pickle.dump(model, fid)
+model.keras_model.save('/home/chenhsi/Projects/DLkaggle/Fashion/model.h5')
+print("Saved model in disk")
+
+# with open('MODEL.pkl', 'wb') as fid:
+#     pickle.dump(model, fid)
 
 #load submission data
 sample_df = pd.read_csv(DATA_DIR/"sample_submission.csv")
 sample_df.head()
 sample_df['EncodedPixels'][0]
+
 # Convert data to run-length encoding
 def to_rle(bits):
     rle = []
@@ -380,19 +407,20 @@ def refine_masks(masks, rois):
 sub_list = []
 missing_count = 0
 for i, row in tqdm(sample_df.iterrows(), total=len(sample_df)):
-    image = resize_image(str(DATA_DIR/'test'/row['ImageId']))
-    result = model.detect([image])[0]
-    if result['masks'].size > 0:
-        masks, _ = refine_masks(result['masks'], result['rois'])
-        for m in range(masks.shape[-1]):
-            mask = masks[:, :, m].ravel(order='F')
-            rle = to_rle(mask)
-            label = result['class_ids'][m] - 1
-            sub_list.append([row['ImageId'], ' '.join(list(map(str, rle))), label])
-    else:
-        # The system does not allow missing ids, this is an easy way to fill them 
-        sub_list.append([row['ImageId'], '1 1', 23])
-        missing_count += 1
+    if os.path.isfile(str(DATA_DIR/'test'/row['ImageId'])):
+        image = resize_image(str(DATA_DIR/'test'/row['ImageId']))
+        result = model.detect([image])[0]
+        if result['masks'].size > 0:
+            masks, _ = refine_masks(result['masks'], result['rois'])
+            for m in range(masks.shape[-1]):
+                mask = masks[:, :, m].ravel(order='F')
+                rle = to_rle(mask)
+                label = result['class_ids'][m] - 1
+                sub_list.append([row['ImageId'], ' '.join(list(map(str, rle))), label])
+        else:
+            # The system does not allow missing ids, this is an easy way to fill them 
+            sub_list.append([row['ImageId'], '1 1', 23])
+            missing_count += 1
 
 submission_df = pd.DataFrame(sub_list, columns=sample_df.columns.values)
 print("Total image results: ", submission_df['ImageId'].nunique())
@@ -426,3 +454,4 @@ for i in range(9):
                                 title=image_id, figsize=(12, 12))
 
   
+# %%
