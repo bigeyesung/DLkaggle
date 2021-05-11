@@ -273,17 +273,14 @@ valid_dataset.prepare()
 train_segments = np.concatenate(train_df['CategoryId'].values).astype(int)
 print("Total train images: ", len(train_df))
 print("Total train segments: ", len(train_segments))
-
 plt.figure(figsize=(12, 3))
 values, counts = np.unique(train_segments, return_counts=True)
 plt.bar(values, counts)
 plt.xticks(values, label_names, rotation='vertical')
 plt.show()
-
 valid_segments = np.concatenate(valid_df['CategoryId'].values).astype(int)
 print("Total validation images: ", len(valid_df))
 print("Total validation segments: ", len(valid_segments))
-
 plt.figure(figsize=(12, 3))
 values, counts = np.unique(valid_segments, return_counts=True)
 plt.bar(values, counts)
