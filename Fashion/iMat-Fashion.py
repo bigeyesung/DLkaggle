@@ -264,12 +264,10 @@ def get_fold():
             return image_df.iloc[train_index], image_df.iloc[valid_index]
         
 train_df, valid_df = get_fold()
-
 train_dataset = FashionDataset(train_df)
 train_dataset.prepare()
 valid_dataset = FashionDataset(valid_df)
 valid_dataset.prepare()
-
 train_segments = np.concatenate(train_df['CategoryId'].values).astype(int)
 print("Total train images: ", len(train_df))
 print("Total train segments: ", len(train_segments))
