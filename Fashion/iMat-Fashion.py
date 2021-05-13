@@ -39,30 +39,6 @@ sys.path.append(str(ROOT_DIR)+'/Mask_RCNN')
 # and the image size is set to 512, which is the same as the size of submission masks
 NUM_CATS = 46
 IMAGE_SIZE = 512
-
-
-class Utility():
-    def __init__(self):
-        self.config = ConfigProto()
-        self.config.gpu_options.allow_growth = True
-        self.session = InteractiveSession(config=self.config)
-
-    def allocate_gpu_memory(self, gpu_number=0):
-        physical_devices = tensorflow.config.experimental.list_physical_devices('GPU')
-
-        if physical_devices:
-            try:
-                print("Found {} GPU(s)".format(len(physical_devices)))
-                tensorflow.config.set_visible_devices(physical_devices[gpu_number], 'GPU')
-                tensorflow.config.experimental.set_memory_growth(physical_devices[gpu_number], True)
-                print("#{} GPU memory is allocated".format(gpu_number))
-            except RuntimeError as e:
-                print(e)
-        else:
-            print("Not enough GPU hardware devices available")
-
-util = Utility()
-util.allocate_gpu_memory()
 def resize_image(image_path):
     img = cv2.imread(image_path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
