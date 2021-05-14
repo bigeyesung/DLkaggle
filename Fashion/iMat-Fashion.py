@@ -39,6 +39,7 @@ sys.path.append(str(ROOT_DIR)+'/Mask_RCNN')
 # and the image size is set to 512, which is the same as the size of submission masks
 NUM_CATS = 46
 IMAGE_SIZE = 512
+
 def resize_image(image_path):
     img = cv2.imread(image_path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -61,19 +62,21 @@ class FashionConfig(Config):
     # STEPS_PER_EPOCH should be the number of instances 
     # divided by (GPU_COUNT*IMAGES_PER_GPU), and so should VALIDATION_STEPS;
     # however, due to the time limit, I set them so that this kernel can be run in 9 hours
-#     STEPS_PER_EPOCH = 1000
-#     VALIDATION_STEPS = 200
-    STEPS_PER_EPOCH = 10
-    VALIDATION_STEPS = 2
+    STEPS_PER_EPOCH = 1000
+    VALIDATION_STEPS = 200
+    # STEPS_PER_EPOCH = 10
+    # VALIDATION_STEPS = 2
     
 config = FashionConfig()
 config.display()
 
-class TuneDataset():
+class InfoHouse():
+
     def __init__(self):
         self.segment_df=None
         self.label_names=None
-    def SetDataset(self,filePath):
+
+    def SetInfo(self,filePath):
         #Make Datasets
         with open(filePath) as f:
             label_descriptions = json.load(f)
@@ -131,7 +134,7 @@ class TuneDataset():
     #     return mask
         return cat_list, mask_list
 
-    def TestFunc(self):
+    def GetInfo(self):
         img_list = os.listdir(str(IMAGE_DIR))
         for k in img_list[:3]:
             cat_list1, mask_list1 = self.complete_make_mask(self.segment_df, k)
@@ -149,8 +152,8 @@ class TuneDataset():
             plt.subplots_adjust(wspace=0.4, hspace=-0.65)
 
         seg_att_df = self.segment_df[[len(x)>0 for x in self.segment_df['AttributeId']]].reset_index(drop=['index'])
-        image_df = self.segment_df.groupby('ImageId')['EncodedPixels', 'CategoryId'].agg(lambda x: list(x))
         size_df = self.segment_df.groupby('ImageId')['Height', 'Width'].mean()
+        image_df = self.segment_df.groupby('ImageId')['EncodedPixels', 'CategoryId'].agg(lambda x: list(x))
         image_df = image_df.join(size_df, on='ImageId')
 
         # image_df = image_df.iloc[:10]
@@ -158,9 +161,9 @@ class TuneDataset():
         image_df.head()
         return seg_att_df, image_df, self.label_names
 
-tuner=TuneDataset()
-tuner.SetDataset(DATA_DIR/"label_descriptions.json")
-seg_att_df, image_df, label_names = tuner.TestFunc()
+infohouse=InfoHouse()
+infohouse.SetInfo(DATA_DIR/"label_descriptions.json")
+seg_att_df, image_df, label_names = infohouse.GetInfo()
 
 class FashionDataset(utils.Dataset):
 
@@ -263,10 +266,8 @@ plt.show()
 
 # Note that any hyperparameters here, such as LR, may still not be optimal
 LR = 1e-4
-# EPOCHS = [2, 6, 8]
-EPOCHS = [10, 20, 30]
-
-
+EPOCHS = [2, 6, 8]
+# EPOCHS = [50, 100, 1000]
 warnings.filterwarnings("ignore")
 model = modellib.MaskRCNN(mode='training', config=config, model_dir=ROOT_DIR)
 model.load_weights(COCO_WEIGHTS_PATH, by_name=True, exclude=[   'mrcnn_class_logits', 
