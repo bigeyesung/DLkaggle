@@ -4,6 +4,7 @@ import gc
 import sys
 import json
 import glob
+
 import random
 import cv2
 import numpy as np
@@ -46,12 +47,35 @@ def resize_image(image_path):
     img = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE), interpolation=cv2.INTER_AREA)  
     return img
 
+class Utility():
+    def __init__(self):
+        self.config = ConfigProto()
+        self.config.gpu_options.allow_growth = True
+        self.session = InteractiveSession(config=self.config)
+
+    def allocate_gpu_memory(self, gpu_number=0):
+        physical_devices = tensorflow.config.experimental.list_physical_devices('GPU')
+
+        if physical_devices:
+            try:
+                print("Found {} GPU(s)".format(len(physical_devices)))
+                tensorflow.config.set_visible_devices(physical_devices[gpu_number], 'GPU')
+                tensorflow.config.experimental.set_memory_growth(physical_devices[gpu_number], True)
+                print("#{} GPU memory is allocated".format(gpu_number))
+            except RuntimeError as e:
+                print(e)
+        else:
+            print("Not enough GPU hardware devices available")
+
+util = Utility()
+util.allocate_gpu_memory()
+
 #Mask R-CNN has a load of hyperparameters. I only adjust some of them.
 class FashionConfig(Config):
     NAME = "fashion"
     NUM_CLASSES = NUM_CATS + 1 # +1 for the background class
     GPU_COUNT = 1
-    IMAGES_PER_GPU = 4 # a memory error occurs when IMAGES_PER_GPU is too high
+    IMAGES_PER_GPU = 2 # a memory error occurs when IMAGES_PER_GPU is too high
     BACKBONE = 'resnet50'
     IMAGE_MIN_DIM = IMAGE_SIZE
     IMAGE_MAX_DIM = IMAGE_SIZE    
@@ -266,8 +290,8 @@ plt.show()
 
 # Note that any hyperparameters here, such as LR, may still not be optimal
 LR = 1e-4
-EPOCHS = [2, 6, 8]
-# EPOCHS = [50, 100, 1000]
+# EPOCHS = [1, 3, 5]
+EPOCHS = [50, 80, 100]
 warnings.filterwarnings("ignore")
 model = modellib.MaskRCNN(mode='training', config=config, model_dir=ROOT_DIR)
 model.load_weights(COCO_WEIGHTS_PATH, by_name=True, exclude=[   'mrcnn_class_logits', 
@@ -330,7 +354,7 @@ model_path = glob_list[0] if glob_list else ''
 
 class InferenceConfig(FashionConfig):
     GPU_COUNT = 1
-    IMAGES_PER_GPU = 1
+    IMAGES_PER_GPU = 2
 #create a model in inference mode
 inference_config = InferenceConfig()
 model = modellib.MaskRCNN(mode='inference', config=inference_config, model_dir=ROOT_DIR)
