@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import itertools
+
 import tensorflow
 import warnings
 import pickle
@@ -67,8 +68,7 @@ class Utility():
         else:
             print("Not enough GPU hardware devices available")
 
-util = Utility()
-util.allocate_gpu_memory()
+
 
 #Mask R-CNN has a load of hyperparameters. I only adjust some of them.
 class FashionConfig(Config):
@@ -90,9 +90,7 @@ class FashionConfig(Config):
     VALIDATION_STEPS = 200
     # STEPS_PER_EPOCH = 10
     # VALIDATION_STEPS = 2
-    
-config = FashionConfig()
-config.display()
+
 
 class InfoHouse():
 
@@ -185,9 +183,7 @@ class InfoHouse():
         image_df.head()
         return seg_att_df, image_df, self.label_names
 
-infohouse=InfoHouse()
-infohouse.SetInfo(DATA_DIR/"label_descriptions.json")
-seg_att_df, image_df, label_names = infohouse.GetInfo()
+
 
 class FashionDataset(utils.Dataset):
 
@@ -234,143 +230,21 @@ class FashionDataset(utils.Dataset):
             
         return mask, np.array(labels)
 
-dataset = FashionDataset(image_df)
-dataset.prepare()
-
-for i in range(8,10):
-#     image_id = random.choice(dataset.image_ids)
-    image_id = dataset.image_ids[i]
-    print(dataset.image_reference(image_id))
-    image = dataset.load_image(image_id)
-    mask, class_ids = dataset.load_mask(image_id)
-    print('mask_shape:',mask.shape)
-    print('img_shape:',image.shape)
-    print(class_ids)
-    print(dataset.class_names)
-    print(len(dataset.class_names))
-#     plt.figure()
-#     plt.imshow(image)
-#     visualize.display_top_masks(image, mask, class_ids, dataset.class_names, limit=4)
-    visualize.display_top_masks(image, mask, class_ids, dataset.class_names, limit=4)
 
 
-# This code partially supports k-fold training, 
-# you can specify the fold to train and the total number of folds here
-FOLD = 0
-N_FOLDS = 5
-kf = KFold(n_splits=N_FOLDS, random_state=42, shuffle=True)
-splits = kf.split(image_df) # ideally, this should be multilabel stratification
+
 
 def get_fold():    
     for i, (train_index, valid_index) in enumerate(splits):
         if i == FOLD:
             return image_df.iloc[train_index], image_df.iloc[valid_index]
         
-train_df, valid_df = get_fold()
-train_dataset = FashionDataset(train_df)
-train_dataset.prepare()
-valid_dataset = FashionDataset(valid_df)
-valid_dataset.prepare()
-train_segments = np.concatenate(train_df['CategoryId'].values).astype(int)
-print("Total train images: ", len(train_df))
-print("Total train segments: ", len(train_segments))
-plt.figure(figsize=(12, 3))
-values, counts = np.unique(train_segments, return_counts=True)
-plt.bar(values, counts)
-plt.xticks(values, label_names, rotation='vertical')
-plt.show()
-valid_segments = np.concatenate(valid_df['CategoryId'].values).astype(int)
-print("Total validation images: ", len(valid_df))
-print("Total validation segments: ", len(valid_segments))
-plt.figure(figsize=(12, 3))
-values, counts = np.unique(valid_segments, return_counts=True)
-plt.bar(values, counts)
-plt.xticks(values, label_names, rotation='vertical')
-plt.show()
 
-# Note that any hyperparameters here, such as LR, may still not be optimal
-LR = 1e-4
-# EPOCHS = [1, 3, 5]
-EPOCHS = [50, 80, 100]
-warnings.filterwarnings("ignore")
-model = modellib.MaskRCNN(mode='training', config=config, model_dir=ROOT_DIR)
-model.load_weights(COCO_WEIGHTS_PATH, by_name=True, exclude=[   'mrcnn_class_logits', 
-                                                                'mrcnn_bbox_fc', 
-                                                                'mrcnn_bbox', 
-                                                                'mrcnn_mask'])
-
-augmentation = iaa.Sequential([
-    iaa.Fliplr(0.5) # only horizontal flip here
-])
-#firstly training only "head layer"
-model.train(train_dataset, valid_dataset,
-            learning_rate=LR*2, # train heads with higher lr to speedup learning
-            epochs=EPOCHS[0],
-            layers='heads',
-            augmentation=None)
-
-history = model.keras_model.history.history
-model.train(train_dataset, valid_dataset,
-            learning_rate=LR,
-            epochs=EPOCHS[1],
-            layers='all',
-            augmentation=augmentation)
-
-new_history = model.keras_model.history.history
-for k in new_history: history[k] = history[k] + new_history[k]
-#we reduce LR and train again.
-model.train(train_dataset, 
-            valid_dataset,
-            learning_rate=LR/5,
-            epochs=EPOCHS[2],
-            layers='all',
-            augmentation=augmentation)
-new_history = model.keras_model.history.history
-for k in new_history: history[k] = history[k] + new_history[k]
-
-#visualize training history and choose the best epoch.
-epochs = range(EPOCHS[-1])
-plt.figure(figsize=(18, 6))
-plt.subplot(131)
-plt.plot(epochs, history['loss'], label="train loss")
-plt.plot(epochs, history['val_loss'], label="valid loss")
-plt.legend()
-plt.subplot(132)
-plt.plot(epochs, history['mrcnn_class_loss'], label="train class loss")
-plt.plot(epochs, history['val_mrcnn_class_loss'], label="valid class loss")
-plt.legend()
-plt.subplot(133)
-plt.plot(epochs, history['mrcnn_mask_loss'], label="train mask loss")
-plt.plot(epochs, history['val_mrcnn_mask_loss'], label="valid mask loss")
-plt.legend()
-plt.show()
-best_epoch = np.argmin(history["val_loss"]) + 1
-print("Best epoch: ", best_epoch)
-print("Valid loss: ", history["val_loss"][best_epoch-1])
-
-#prediction
-glob_list = glob.glob(f'/home/chenhsi/Projects/DLkaggle/Fashion/fashion*/mask_rcnn_fashion_{best_epoch:04d}.h5')
-model_path = glob_list[0] if glob_list else ''
 
 class InferenceConfig(FashionConfig):
     GPU_COUNT = 1
-    IMAGES_PER_GPU = 2
-#create a model in inference mode
-inference_config = InferenceConfig()
-model = modellib.MaskRCNN(mode='inference', config=inference_config, model_dir=ROOT_DIR)
-assert model_path != '', "Provide path to trained weights"
-print("Loading trained weights from ", model_path)
-model.load_weights(model_path, by_name=True)
-model.keras_model.save('/home/chenhsi/Projects/DLkaggle/Fashion/model.h5')
-print("Saved model in disk")
+    IMAGES_PER_GPU = 1
 
-# with open('MODEL.pkl', 'wb') as fid:
-#     pickle.dump(model, fid)
-
-#load submission data
-sample_df = pd.read_csv(DATA_DIR/"sample_submission.csv")
-sample_df.head()
-sample_df['EncodedPixels'][0]
 
 # Convert data to run-length encoding
 def to_rle(bits):
@@ -400,54 +274,190 @@ def refine_masks(masks, rois):
             rois[m, :] = [y1, x1, y2, x2]
     return masks, rois
 
-sub_list = []
-missing_count = 0
-for i, row in tqdm(sample_df.iterrows(), total=len(sample_df)):
-    if os.path.isfile(str(DATA_DIR/'test'/row['ImageId'])):
-        image = resize_image(str(DATA_DIR/'test'/row['ImageId']))
-        result = model.detect([image])[0]
-        if result['masks'].size > 0:
-            masks, _ = refine_masks(result['masks'], result['rois'])
-            for m in range(masks.shape[-1]):
-                mask = masks[:, :, m].ravel(order='F')
-                rle = to_rle(mask)
-                label = result['class_ids'][m] - 1
-                sub_list.append([row['ImageId'], ' '.join(list(map(str, rle))), label])
+if __name__ == "__main__":
+    #init GPU use
+    util = Utility()
+    util.allocate_gpu_memory()
+    
+    config = FashionConfig()
+    config.display()
+
+    infohouse=InfoHouse()
+    infohouse.SetInfo(DATA_DIR/"label_descriptions.json")
+    seg_att_df, image_df, label_names = infohouse.GetInfo()
+    
+    dataset = FashionDataset(image_df)
+    dataset.prepare()
+
+    for i in range(8,10):
+    #     image_id = random.choice(dataset.image_ids)
+        image_id = dataset.image_ids[i]
+        print(dataset.image_reference(image_id))
+        image = dataset.load_image(image_id)
+        mask, class_ids = dataset.load_mask(image_id)
+        print('mask_shape:',mask.shape)
+        print('img_shape:',image.shape)
+        print(class_ids)
+        print(dataset.class_names)
+        print(len(dataset.class_names))
+    #     plt.figure()
+    #     plt.imshow(image)
+    #     visualize.display_top_masks(image, mask, class_ids, dataset.class_names, limit=4)
+        visualize.display_top_masks(image, mask, class_ids, dataset.class_names, limit=4)
+
+
+    # This code partially supports k-fold training, 
+    # you can specify the fold to train and the total number of folds here
+    FOLD = 0
+    N_FOLDS = 5
+    kf = KFold(n_splits=N_FOLDS, random_state=42, shuffle=True)
+    splits = kf.split(image_df) # ideally, this should be multilabel stratification
+
+    train_df, valid_df = get_fold()
+    train_dataset = FashionDataset(train_df)
+    train_dataset.prepare()
+    valid_dataset = FashionDataset(valid_df)
+    valid_dataset.prepare()
+    train_segments = np.concatenate(train_df['CategoryId'].values).astype(int)
+    print("Total train images: ", len(train_df))
+    print("Total train segments: ", len(train_segments))
+    plt.figure(figsize=(12, 3))
+    values, counts = np.unique(train_segments, return_counts=True)
+    plt.bar(values, counts)
+    plt.xticks(values, label_names, rotation='vertical')
+    plt.show()
+    valid_segments = np.concatenate(valid_df['CategoryId'].values).astype(int)
+    print("Total validation images: ", len(valid_df))
+    print("Total validation segments: ", len(valid_segments))
+    plt.figure(figsize=(12, 3))
+    values, counts = np.unique(valid_segments, return_counts=True)
+    plt.bar(values, counts)
+    plt.xticks(values, label_names, rotation='vertical')
+    plt.show()
+
+    # Note that any hyperparameters here, such as LR, may still not be optimal
+    LR = 1e-4
+    # EPOCHS = [1, 3, 5]
+    EPOCHS = [50, 80, 90]
+    warnings.filterwarnings("ignore")
+    model = modellib.MaskRCNN(mode='training', config=config, model_dir=ROOT_DIR)
+    model.load_weights(COCO_WEIGHTS_PATH, by_name=True, exclude=[   'mrcnn_class_logits', 
+                                                                    'mrcnn_bbox_fc', 
+                                                                    'mrcnn_bbox', 
+                                                                    'mrcnn_mask'])
+
+    augmentation = iaa.Sequential([
+        iaa.Fliplr(0.5) # only horizontal flip here
+    ])
+    #firstly training only "head layer"
+    model.train(train_dataset, valid_dataset,
+                learning_rate=LR*2, # train heads with higher lr to speedup learning
+                epochs=EPOCHS[0],
+                layers='heads',
+                augmentation=None)
+
+    history = model.keras_model.history.history
+    model.train(train_dataset, valid_dataset,
+                learning_rate=LR,
+                epochs=EPOCHS[1],
+                layers='all',
+                augmentation=augmentation)
+
+    new_history = model.keras_model.history.history
+    for k in new_history: history[k] = history[k] + new_history[k]
+    #we reduce LR and train again.
+    model.train(train_dataset, 
+                valid_dataset,
+                learning_rate=LR/5,
+                epochs=EPOCHS[2],
+                layers='all',
+                augmentation=augmentation)
+    new_history = model.keras_model.history.history
+    for k in new_history: history[k] = history[k] + new_history[k]
+
+    #visualize training history and choose the best epoch.
+    epochs = range(EPOCHS[-1])
+    plt.figure(figsize=(18, 6))
+    plt.subplot(131)
+    plt.plot(epochs, history['loss'], label="train loss")
+    plt.plot(epochs, history['val_loss'], label="valid loss")
+    plt.legend()
+    plt.subplot(132)
+    plt.plot(epochs, history['mrcnn_class_loss'], label="train class loss")
+    plt.plot(epochs, history['val_mrcnn_class_loss'], label="valid class loss")
+    plt.legend()
+    plt.subplot(133)
+    plt.plot(epochs, history['mrcnn_mask_loss'], label="train mask loss")
+    plt.plot(epochs, history['val_mrcnn_mask_loss'], label="valid mask loss")
+    plt.legend()
+    plt.show()
+    best_epoch = np.argmin(history["val_loss"]) + 1
+    print("Best epoch: ", best_epoch)
+    print("Valid loss: ", history["val_loss"][best_epoch-1])
+
+    #prediction
+    best_epoch=42
+    glob_list = glob.glob(f'/home/chenhsi/Projects/DLkaggle/Fashion/fashion*/mask_rcnn_fashion_{best_epoch:04d}.h5')
+    model_path = glob_list[0] if glob_list else ''
+
+    #create a model in inference mode
+    inference_config = InferenceConfig()
+    model = modellib.MaskRCNN(mode='inference', config=inference_config, model_dir=ROOT_DIR)
+    assert model_path != '', "Provide path to trained weights"
+    print("Loading trained weights from ", model_path)
+    model.load_weights(model_path, by_name=True)
+
+    #load submission data
+    sample_df = pd.read_csv(DATA_DIR/"sample_submission.csv")
+    sample_df.head()
+    sample_df['EncodedPixels'][0]
+
+    sub_list = []
+    missing_count = 0
+    for i, row in tqdm(sample_df.iterrows(), total=len(sample_df)):
+        if os.path.isfile(str(DATA_DIR/'test'/row['ImageId'])):
+            image = resize_image(str(DATA_DIR/'test'/row['ImageId']))
+            result = model.detect([image])[0]
+            if result['masks'].size > 0:
+                masks, _ = refine_masks(result['masks'], result['rois'])
+                for m in range(masks.shape[-1]):
+                    mask = masks[:, :, m].ravel(order='F')
+                    rle = to_rle(mask)
+                    label = result['class_ids'][m] - 1
+                    sub_list.append([row['ImageId'], ' '.join(list(map(str, rle))), label])
+            else:
+                # The system does not allow missing ids, this is an easy way to fill them 
+                sub_list.append([row['ImageId'], '1 1', 23])
+                missing_count += 1
+
+    submission_df = pd.DataFrame(sub_list, columns=sample_df.columns.values)
+    print("Total image results: ", submission_df['ImageId'].nunique())
+    print("Missing Images: ", missing_count)
+    submission_df.head()
+    submission_df.to_csv("submission.csv", index=False)
+
+    for i in range(9):
+        image_id = sample_df.sample()['ImageId'].values[0]
+        image_path = str(DATA_DIR/'test'/image_id)
+        img = cv2.imread(image_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        result = model.detect([resize_image(image_path)])
+        r = result[0]
+        if r['masks'].size > 0:
+            masks = np.zeros((img.shape[0], img.shape[1], r['masks'].shape[-1]), dtype=np.uint8)
+            for m in range(r['masks'].shape[-1]):
+                masks[:, :, m] = cv2.resize(r['masks'][:, :, m].astype('uint8'), 
+                                            (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)        
+            y_scale = img.shape[0]/IMAGE_SIZE
+            x_scale = img.shape[1]/IMAGE_SIZE
+            rois = (r['rois'] * [y_scale, x_scale, y_scale, x_scale]).astype(int)
+            
+            masks, rois = refine_masks(masks, rois)
         else:
-            # The system does not allow missing ids, this is an easy way to fill them 
-            sub_list.append([row['ImageId'], '1 1', 23])
-            missing_count += 1
-
-submission_df = pd.DataFrame(sub_list, columns=sample_df.columns.values)
-print("Total image results: ", submission_df['ImageId'].nunique())
-print("Missing Images: ", missing_count)
-submission_df.head()
-submission_df.to_csv("submission.csv", index=False)
-
-#visualize the results
-for i in range(9):
-    image_id = sample_df.sample()['ImageId'].values[0]
-    image_path = str(DATA_DIR/'test'/image_id)
-    img = cv2.imread(image_path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    result = model.detect([resize_image(image_path)])
-    r = result[0]
-    if r['masks'].size > 0:
-        masks = np.zeros((img.shape[0], img.shape[1], r['masks'].shape[-1]), dtype=np.uint8)
-        for m in range(r['masks'].shape[-1]):
-            masks[:, :, m] = cv2.resize(r['masks'][:, :, m].astype('uint8'), 
-                                        (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)        
-        y_scale = img.shape[0]/IMAGE_SIZE
-        x_scale = img.shape[1]/IMAGE_SIZE
-        rois = (r['rois'] * [y_scale, x_scale, y_scale, x_scale]).astype(int)
-        
-        masks, rois = refine_masks(masks, rois)
-    else:
-        masks, rois = r['masks'], r['rois']
-        
-    visualize.display_instances(img, rois, masks, r['class_ids'], 
-                                ['bg']+label_names, r['scores'],
-                                title=image_id, figsize=(12, 12))
-
+            masks, rois = r['masks'], r['rois']
+            
+        visualize.display_instances(img, rois, masks, r['class_ids'], 
+                                    ['bg']+label_names, r['scores'],
+                                    title=image_id, figsize=(12, 12))
   
 # %%
