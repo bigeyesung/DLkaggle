@@ -121,7 +121,7 @@ class BirdClassfier():
                     metrics=["accuracy"])                      
         history = model.fit(
                 train_generator,
-                epochs=20,
+                epochs=1,
                 validation_data=validation_generator,
                 verbose=1, 
                 shuffle=True,
